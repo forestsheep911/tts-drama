@@ -3,6 +3,7 @@
 import { defineStore } from "pinia";
 import getTTSData from "./play";
 import { ElMessage } from "element-plus";
+import { h } from "vue";
 const fs = require("fs");
 const path = require("path");
 const Store = require("electron-store");
@@ -105,6 +106,9 @@ export const useTtsStore = defineStore("ttsStore", {
       );
     },
     async start() {
+      console.log("清空缓存中");
+      this.currMp3Buffer = Buffer.alloc(0);
+      this.currMp3Url = "";
       // this.page.asideIndex == "1"单文本转换
       if (this.page.asideIndex == "1") {
         this.currMp3Url = "";
@@ -174,12 +178,17 @@ export const useTtsStore = defineStore("ttsStore", {
             this.formConfig.role,
             (this.formConfig.speed - 1) * 100,
             (this.formConfig.pitch - 1) * 50
-          ).then((mp3buffer: any) => {
-            this.currMp3Buffer = mp3buffer;
-            const svlob = new Blob([mp3buffer]);
-            this.currMp3Url = URL.createObjectURL(svlob);
-            this.isLoading = false;
-          });
+          )
+            .then((mp3buffer: any) => {
+              this.currMp3Buffer = mp3buffer;
+              const svlob = new Blob([mp3buffer]);
+              this.currMp3Url = URL.createObjectURL(svlob);
+              this.isLoading = false;
+            })
+            .catch((err) => {
+              this.isLoading = false;
+              console.log(err);
+            });
         }
         ElMessage({
           message: this.config.autoplay
@@ -280,16 +289,21 @@ export const useTtsStore = defineStore("ttsStore", {
                   this.formConfig.role,
                   (this.formConfig.speed - 1) * 100,
                   (this.formConfig.pitch - 1) * 50
-                ).then((mp3buffer: any) => {
-                  fs.writeFileSync(filePath, mp3buffer);
-                  this.setDoneStatus(item.filePath);
-                  ElMessage({
-                    message: "成功，正在写入" + filePath,
-                    type: "success",
-                    duration: 2000,
+                )
+                  .then((mp3buffer: any) => {
+                    fs.writeFileSync(filePath, mp3buffer);
+                    this.setDoneStatus(item.filePath);
+                    ElMessage({
+                      message: "成功，正在写入" + filePath,
+                      type: "success",
+                      duration: 2000,
+                    });
+                    this.isLoading = false;
+                  })
+                  .catch((err) => {
+                    this.isLoading = false;
+                    console.log(err);
                   });
-                  this.isLoading = false;
-                });
               }
             }
           );
@@ -302,9 +316,21 @@ export const useTtsStore = defineStore("ttsStore", {
       const filePath = path.join(this.config.savePath, currTime + ".mp3");
       fs.writeFileSync(path.resolve(filePath), this.currMp3Buffer);
       ElMessage({
-        message: "下载成功：" + filePath,
+        dangerouslyUseHTMLString: true,
+        message: h("p", null, [
+          h("span", null, "下载完成："),
+          h(
+            "span",
+            {
+              on: {
+                click: this.showItemInFolder(filePath),
+              },
+            },
+            filePath
+          ),
+        ]),
         type: "success",
-        duration: 2000,
+        duration: 4000,
       });
       ipcRenderer.send("log.info", `下载完成:${filePath}`);
     },
@@ -320,12 +346,19 @@ export const useTtsStore = defineStore("ttsStore", {
         this.formConfig.role,
         (this.formConfig.speed - 1) * 100,
         (this.formConfig.pitch - 1) * 50
-      ).then((mp3buffer: any) => {
-        this.currMp3Buffer = mp3buffer;
-        const svlob = new Blob([mp3buffer]);
-        const sound = new Audio(URL.createObjectURL(svlob));
-        sound.play();
-      });
+      )
+        .then((mp3buffer: any) => {
+          this.currMp3Buffer = mp3buffer;
+          const svlob = new Blob([mp3buffer]);
+          const sound = new Audio(URL.createObjectURL(svlob));
+          sound.play();
+        })
+        .catch((err: any) => {
+          console.log(err);
+        });
+    },
+    showItemInFolder(filePath: string) {
+      ipcRenderer.send("showItemInFolder", filePath);
     },
   },
 });
